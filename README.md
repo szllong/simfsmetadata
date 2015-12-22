@@ -1,3 +1,1 @@
-# nvmmfs
-# simfsallcopy
 # simfsmetadata
