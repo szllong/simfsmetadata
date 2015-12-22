@@ -215,6 +215,9 @@ int nvmm_alloc_blocks(struct inode *inode, int num)
 		pud = nvmm_get_pud(sb, ino);
 		nvmap(vaddr, pud, mm);
 	}
+	if(0 == num){
+		return errval;
+	}
 //	printk("before alloc\n");
 	errval = nvmm_new_block(sb, &phys, 1, num);
 //	printk("after alloc\n");
@@ -382,7 +385,7 @@ int nvmm_update_inode(struct inode *inode)
  * input :
  * @inode : vfs inode
  */
-static void nvmm_free_inode(struct inode *inode)
+void nvmm_free_inode(struct inode *inode)
 {
 	struct super_block *sb = inode->i_sb;
 	struct nvmm_super_block *ns;

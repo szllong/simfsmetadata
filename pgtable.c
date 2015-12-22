@@ -331,15 +331,14 @@ void nvmm_rm_pmd_range(struct super_block *sb, pud_t *pud)
     int cnt = 0;
 
     p = pmd = nvmm_get_pmd(pud);
-    if (pmd_none(*pmd))
-	return;
 
-    do {
-        nvmm_rm_pte_range(sb, pmd);
-        pmd++;
-        cnt++;
-    }while(!pmd_none(*pmd) && cnt < PTRS_PER_PMD);
-
+    if (!pmd_none(*pmd)){
+		do {
+			nvmm_rm_pte_range(sb, pmd);
+			pmd++;
+			cnt++;
+		}while(!pmd_none(*pmd) && cnt < PTRS_PER_PMD);
+	}
     nvmm_pmd_free(sb, p);
 }
 
@@ -353,18 +352,66 @@ void nvmm_rm_pg_table(struct super_block *sb, u64 ino)
 
     ni = nvmm_get_inode(sb, ino);
     p = pud = nvmm_get_pud(sb, ino);
-    if (pud_none(*pud))
-	return;
-
-    do {
-        nvmm_rm_pmd_range(sb, pud);
-        pud++;
-        cnt++;
-    }while(!pud_none(*pud) && cnt < PTRS_PER_PUD);
-
+    if (!pud_none(*pud)){
+	    do {
+		    nvmm_rm_pmd_range(sb, pud);
+			pud++;
+			cnt++;
+		}while(!pud_none(*pud) && cnt < PTRS_PER_PUD);
+	}
     nvmm_pud_free(sb, p);
 
     ni->i_pg_addr = 0;
+}
+
+void nvmm_rm_pte_range_file_pages(struct super_block *sb, pmd_t *pmd)
+{
+    pte_t *pte, *p;
+    int cnt = 0;
+    unsigned long pagefn;
+
+    p = pte = nvmm_get_pte(pmd);
+	
+	if (!pte_none(*pte)){
+		do {
+			pagefn = (pte_val(*pte) & 0x0fffffffffffffff) >> PAGE_SHIFT;
+			nvmm_free_block(sb, pagefn);
+			pte++;
+			cnt++;
+		}while(!pte_none(*pte) && cnt < PTRS_PER_PTE);
+	}
+}
+
+void nvmm_rm_pmd_range_file_pages(struct super_block *sb, pud_t *pud)
+{
+	pmd_t *pmd, *p;
+	int cnt = 0;
+
+	p = pmd = nvmm_get_pmd(pud);
+    if (!pmd_none(*pmd)){
+		do {
+			nvmm_rm_pte_range_file_pages(sb, pmd);
+			pmd++;
+			cnt++;
+		}while(!pmd_none(*pmd) && cnt < PTRS_PER_PMD);
+	}
+}
+
+void nvmm_rm_file_pages(struct super_block *sb, u64 ino)
+{
+	pud_t *pud, *p;
+	struct nvmm_inode *ni;
+	int cnt = 0;
+	
+	ni = nvmm_get_inode(sb, ino);
+	p = pud = nvmm_get_pud(sb, ino);
+	if(!pud_none(*pud)){
+		do{
+			nvmm_rm_pmd_range_file_pages(sb, pud);
+			pud++;
+			cnt++;
+		}while(!pud_none(*pud) && cnt < PTRS_PER_PUD);
+	}
 }
 
 

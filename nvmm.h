@@ -309,11 +309,13 @@ extern int nvmm_write_inode(struct inode *inode, struct writeback_control *wbc);
 extern void nvmm_dirty_inode(struct inode *inode);
 extern int nvmm_notify_change(struct dentry *dentry, struct iattr *attr);
 extern void nvmm_set_inode_flags(struct inode *inode);
+extern void nvmm_free_inode(struct inode *inode);
 /* pagtable.c */
 extern int nvmm_establish_mapping(struct inode *inode);
 extern int nvmm_insert_page(struct super_block *sb, struct inode *inode, struct page *pg);
 extern int nvmm_destroy_mapping(struct inode *inode);
 extern void nvmm_rm_pg_table(struct super_block *sb, u64 ino);
+extern void nvmm_rm_file_pages(struct super_block *sb, u64 ino);
 extern pud_t* nvmm_get_pud(struct super_block *sb, u64 ino);
 extern int nvmm_init_pg_table(struct super_block *sb, u64 ino);
 extern int nvmm_mapping_file(struct inode *inode);
@@ -321,7 +323,8 @@ extern int nvmm_unmapping_file(struct inode *inode);
 extern void nvmm_setup_pud(pud_t *pud, pmd_t *pmd);
 extern void nvmm_setup_pmd(pmd_t *pmd, pte_t *pte);
 extern void nvmm_setup_pte(pte_t *pte, struct page *pg);
-
+extern void nvmm_rm_pte_range(struct super_block *sb, pmd_t *pmd);
+extern void nvmm_rm_pmd_range(struct super_block *sb, pud_t *pud);
 /*
  * Inode and files operations
  */
