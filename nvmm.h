@@ -34,6 +34,12 @@
 #define clear_opt(o, opt)	(o &= ~NVMM_MOUNT_##opt)
 #define set_opt(o, opt)		(o |= NVMM_MOUNT_##opt)
 #define test_opt(sb, opt)	(NVMM_SB(sb)->s_mount_opt & NVMM_MOUNT_##opt)
+
+#define TRANSACTION_APPENDING  1
+#define TRANSACTION_COMMIT 2
+#define TRANSACTION_CHECKPOINTING 3
+
+
 //static DEFINE_SPINLOCK(superblock_lock);
 /* Function Prototypes */
 extern int nvmm_get_and_update_block(struct inode *inode, sector_t iblock, struct buffer_head *bh, int create);
@@ -46,13 +52,13 @@ extern ssize_t nvmm_direct_IO(int rw, struct kiocb *iocb,
 
 //change mutex to spinlock
 struct nvmm_inode_info{
-	__u32	i_file_acl;
-	__u32	i_flags;
-	__u32	i_dir_acl;
+	unsigned int i_file_acl;
+	unsigned int i_flags;
+	unsigned int i_dir_acl;
 
-	__u32	i_dtime;
+	unsigned int	i_dtime;
 	__u16	i_state;
-	__le64  i_pg_addr;      /* File page table */
+	unsigned long  i_pg_addr;      /* File page table */
 	atomic_t i_p_counter;	/* process num counter */
 	void	*i_virt_addr;	/* inode's virtual address */
 //	struct mutex truncate_mutex;
@@ -62,7 +68,9 @@ struct nvmm_inode_info{
 	spinlock_t truncate_spinlock;
 //
 	struct inode	vfs_inode;
+	struct nvmm_inode *consistency_inode;
 };
+
 
 /*
  * Inode dynamic state flags
@@ -110,7 +118,6 @@ struct nvmm_sb_info {
 //	struct mutex s_lock;
 	spinlock_t s_lock;
 	spinlock_t inode_spinlock;
-	struct inode *consistency_i;
 };
 
 
@@ -288,6 +295,7 @@ extern void nvmm_msg(struct super_block *sb, const char * function,
 /* balloc.c */
 extern void nvmm_init_free_inode_list_offset(struct nvmm_super_block *ps,void *sbi_virt_addr);
 extern void nvmm_init_free_block_list_offset(struct nvmm_super_block *ps,void *sbi_virt_addr);
+extern struct nvmm_consistency_inode *nvmm_alloc_consistency_inode(struct nvmm_super_block *ns);
 extern int nvmm_new_block(struct super_block *sb, phys_addr_t *physaddr, 
                           int zero /* fill 0 if zero is set */, int num);
 extern struct page * nvmm_new_page(struct super_block *sb, int zero);
@@ -296,10 +304,12 @@ extern unsigned long nvmm_count_free_blocks(struct super_block *sb);
 extern unsigned long nvmm_offset_to_phys(struct super_block *sb,unsigned long offset);
 extern inline unsigned long nvmm_phys_to_offset(struct super_block *sb,phy_addr_t phys);
 extern unsigned long nvmm_get_zeroed_page(struct super_block *sb);
-
+extern struct nvmm_inode *nvmm_new_consistency_inode(struct super_block *sb);
+extern void nvmm_free_consistency_inode(struct super_block *sb, struct nvmm_inode *ni);
 /* inode.c */
 extern u64 nvmm_find_data_block(struct inode *inode, unsigned long file_blocknr);
 extern int nvmm_alloc_blocks(struct inode *inode, int num);
+extern inline void nvmm_update_time(struct inode *inode, struct nvmm_inode *ni);
 extern int nvmm_update_inode(struct inode *inode);
 extern struct inode *nvmm_iget(struct super_block *sb, unsigned long ino);
 extern void nvmm_evict_inode(struct inode * inode);
@@ -378,6 +388,10 @@ extern const struct inode_operations nvmm_special_inode_operations;
 extern struct inode_operations nvmm_symlink_inode_operations;
 extern int nvmm_page_symlink(struct inode *inode, const char *symname, int len);
 
+/*consystency.c*/
+extern void nvmm_consistency_before_writing(struct inode *normal_i);
+extern void nvmm_consistency_backup_data(struct super_block *sb, struct inode *normal_i, loff_t offset, size_t length);
+extern void nvmm_consistency_end_writing(struct inode *normal_i);
 
 //extern backing_dev_info nvmm_backing_dev_info;
 #endif //__NVMM_H

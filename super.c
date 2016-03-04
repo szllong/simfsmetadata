@@ -87,6 +87,7 @@ static struct inode *nvmm_alloc_inode(struct super_block *sb)
         return NULL;
     }
     vi->vfs_inode.i_version = 1;
+	vi->i_virt_addr = 0;
     return &vi->vfs_inode;
 }
 
@@ -340,7 +341,9 @@ static void nvmm_set_blocksize(struct super_block *sb, unsigned long size)
 
 static struct nvmm_inode *nvmm_init(struct super_block *sb, unsigned long size)
 {
-	unsigned long bpi, num_inodes, blocksize, num_blocks;
+	unsigned long bpi;
+	unsigned long consistency_num_inodes;
+	unsigned long num_inodes, inode_start, blocksize, num_blocks;
 	u64 free_blk_start;
 	struct nvmm_inode *root_i;
 	struct nvmm_super_block *super;
@@ -390,11 +393,15 @@ static struct nvmm_inode *nvmm_init(struct super_block *sb, unsigned long size)
 	 * up num_inodes such that the end of the inode table
 	 * (and start of bitmap) is on a block boundary
 	 */
-	free_blk_start = (PAGE_SIZE) + (num_inodes << NVMM_INODE_BITS);
+	consistency_num_inodes = 5;
+	inode_start = PAGE_SIZE;
+
+
+	free_blk_start = inode_start + (num_inodes << NVMM_INODE_BITS);
 	if (free_blk_start & (blocksize - 1))
-		free_blk_start = (free_blk_start + blocksize) &
-			~(blocksize -1);
-	num_inodes = (free_blk_start - (PAGE_SIZE)) >> NVMM_INODE_BITS;
+		free_blk_start = (free_blk_start + blocksize) &	~(blocksize -1);
+
+	num_inodes = (free_blk_start - inode_start) >> NVMM_INODE_BITS;
 
 	if (sbi->num_inodes && num_inodes != sbi->num_inodes)
 		sbi->num_inodes = num_inodes;
@@ -419,17 +426,21 @@ static struct nvmm_inode *nvmm_init(struct super_block *sb, unsigned long size)
 	super->s_size = cpu_to_le64(size);
 	super->s_blocksize = cpu_to_le32(blocksize);
 	super->s_inode_count = cpu_to_le64(num_inodes);
+	super->s_free_consistency_count = super->s_consistency_count = cpu_to_le64(consistency_num_inodes);
 	super->s_block_count = cpu_to_le64(num_blocks);
-	super->s_free_inode_count = cpu_to_le64(num_inodes - 1);
+	// 1 is for root inode
+	super->s_free_inode_count = cpu_to_le64(num_inodes - 1 - consistency_num_inodes);
 	super->s_free_block_count = cpu_to_le64(num_blocks);
 	super->s_magic = cpu_to_le16(NVMM_SUPER_MAGIC);
-    	super->s_inode_start = cpu_to_le64(PAGE_SIZE); 
+    super->s_inode_start = cpu_to_le64(inode_start); 
 	super->s_block_start = cpu_to_le64(free_blk_start);
-    	super->s_free_inode_start = cpu_to_le64(NVMM_ROOT_INODE_OFFSET + NVMM_INODE_SIZE);
-    	super->s_free_block_start = cpu_to_le64(free_blk_start);
-    	nvmm_init_free_inode_list_offset(super,sbi->virt_addr);
-    	nvmm_init_free_block_list_offset(super,sbi->virt_addr);
-	nvmm_sync_super(super);
+	super->s_free_inode_start = cpu_to_le64(NVMM_ROOT_INODE_OFFSET + NVMM_INODE_SIZE);
+	super->s_consistency_inode_start = super->s_free_inode_start;
+    super->s_free_block_start = cpu_to_le64(free_blk_start);
+    // free block list will be used in init free inode list, so first init it
+	nvmm_init_free_block_list_offset(super,sbi->virt_addr);
+	nvmm_init_free_inode_list_offset(super,sbi->virt_addr);
+	//nvmm_sync_super(super);
     
 	root_i = nvmm_get_inode(sb, NVMM_ROOT_INO);
 
@@ -553,6 +564,7 @@ static int nvmm_fill_super(struct super_block *sb, void *data, int silent)
     sb->s_max_links =  NVMM_LINK_MAX;
     sb->s_flags |= MS_NOSEC;
     root_i = nvmm_iget(sb,NVMM_ROOT_INO);
+	NVMM_I(root_i)->i_virt_addr = 0;
     nvmm_make_empty(root_i,root_i);
     if (IS_ERR(root_i)) {
         retval = PTR_ERR(root_i);
@@ -566,9 +578,9 @@ static int nvmm_fill_super(struct super_block *sb, void *data, int silent)
     }
 
 	//create a consistency_i inode and set its mode for file
-	NVMM_SB(sb)->consistency_i = nvmm_new_inode(root_i, 0, NULL);
-	NVMM_SB(sb)->consistency_i->i_mode = cpu_to_le16(sbi->mode | S_IFREG);
-	nvmm_alloc_blocks(NVMM_SB(sb)->consistency_i, (PMD_SIZE + sb->s_blocksize - 1) >> sb->s_blocksize_bits);
+//	NVMM_SB(sb)->consistency_i = nvmm_new_inode(root_i, 0, NULL);
+//	NVMM_SB(sb)->consistency_i->i_mode = cpu_to_le16(sbi->mode | S_IFREG);
+//	nvmm_alloc_blocks(NVMM_SB(sb)->consistency_i, (PMD_SIZE + sb->s_blocksize - 1) >> sb->s_blocksize_bits);
 
     retval = 0;  
     return retval;

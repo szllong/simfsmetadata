@@ -128,8 +128,38 @@ struct nvmm_inode {
     __le32  i_generation;   /* File version (for NFS) */
     __le64  i_pg_addr;      /* File page table */
     __le64  i_next_inode_offset; /* offset of the next inode */
-    char    i_pad[48];      /* padding bytes */
+	__le64 origin_inode_ino;	/*origin inode number*/
+	__le64 consistency_inode_ino; /*consistency inode number */
+	__le64 start_write_position;/*Start write position in origin inode file*/
+	__le64 write_length;		/*write length for this writing in origin inode file*/
+	__le64 transaction_flag;	/*transaction flag to record which step is processing*/
 };
+
+
+/**
+ * Structure of an consistency inode in the NVM
+ */
+struct nvmm_consistency_inode{
+	__le32 i_sum;
+	__le32 i_mode;
+	__le32 i_link_counts;
+	__le32 i_bytes;
+	__le64 i_blocks;
+	__le32 i_flags;
+	__le32 i_file_acl;
+	__le32 i_dir_acl;
+	__le64 i_size;
+	__le32 i_atime;
+	__le32 i_ctime;
+	__le32 i_dtime;
+	__le32 i_uid;
+	__le32 i_gid;
+	__le32 i_generation;
+	__le64 i_pg_addr;
+	__le64 i_next_inode_offset;
+
+};
+
 
 /*
  * Structure of super block in NVM
@@ -145,8 +175,10 @@ struct nvmm_super_block {
 	__le64  s_block_count;	    /* The number of blocks */
 	__le64  s_free_block_count;	/*free num block*/
 	__le64  s_free_inode_start; /* Start position of free  inode list */
-    __le64  s_free_inode_hint;
-    __le64  s_free_blocknr_hint;
+    __le64  s_free_consistency_inode_hint;
+    __le64  s_free_consistency_count;
+	__le64  s_consistency_inode_start;		/*consistency inode start*/
+	__le64  s_consistency_count;		/*consistency inode count*/
 	__le64  s_block_start;      /* Start position of data block */
 	__le64  s_free_block_start; /* Start position of free block list */
 	__le32  s_mtime;            /* Mount time */

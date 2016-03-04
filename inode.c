@@ -136,7 +136,7 @@ static void __nvmm_truncate_blocks(struct inode *inode, loff_t start, loff_t end
 	unsigned long ino;
 	unsigned long vaddr;
 	struct mm_struct *mm;
-	mm = current->mm;
+	mm = &init_mm;
 	ni_info = NVMM_I(inode);
 	vaddr = (unsigned long)ni_info->i_virt_addr;
 	ino = inode->i_ino;
@@ -180,6 +180,7 @@ static void nvmm_truncate_blocks(struct inode *inode, loff_t start, loff_t end)
 	__nvmm_truncate_blocks(inode, start, end);
 	inode->i_mtime = inode->i_ctime = CURRENT_TIME_SEC;
 	nvmm_update_inode(inode);
+//	printk("this is in nvmm_truncate_blocks\n"); 
 }//end function nvmm_truncate_blocks
 
 
@@ -206,8 +207,9 @@ int nvmm_alloc_blocks(struct inode *inode, int num)
     struct nvmm_sb_info *nsi = NVMM_SB(sb);
     struct page *pg;
     phys_addr_t phys, base, next, cur;
-    mm = current->mm;
-    base = nsi->phy_addr;
+	//mm = current->mm;
+    mm = &init_mm;
+	base = nsi->phy_addr;
 	ni_info = NVMM_I(inode);
 	vaddr = (unsigned long)ni_info->i_virt_addr;
 	if(!ni->i_pg_addr){
@@ -262,6 +264,7 @@ static int nvmm_read_inode(struct inode *inode, struct nvmm_inode *ni)
 	ni_info = NVMM_I(inode);
 //	mutex_lock(&NVMM_I(inode)->i_meta_mutex);
 //	spin_lock(&read_inode_lock);
+
 	spin_lock(&ni_info->i_meta_spinlock);
 	 if (nvmm_calc_checksum((u8 *)ni, NVMM_INODE_SIZE)) { 
 	 	nvmm_error(inode->i_sb, (char *)nvmm_read_inode, (char *)"checksum error in inode %08x\n",  (u32)inode->i_ino); 
@@ -338,6 +341,14 @@ static int nvmm_read_inode(struct inode *inode, struct nvmm_inode *ni)
 }//end function nvmm_read_inode
 
 
+inline void nvmm_update_time(struct inode *inode, struct nvmm_inode *ni)
+{
+	nvmm_memunlock_inode(inode->i_sb,ni);
+	ni->i_ctime = cpu_to_le32(inode->i_ctime.tv_sec);
+	ni->i_mtime = cpu_to_le32(inode->i_mtime.tv_sec);
+	nvmm_memlock_inode(inode->i_sb,ni);
+}
+
 /*
  * input :
  * @inode : vfs inode
@@ -350,11 +361,12 @@ int nvmm_update_inode(struct inode *inode)
 {
 	struct nvmm_inode *ni;
 	int retval = 0;
-
+	//printk("this is in nvmm_update_inode\n"); 
 	ni = nvmm_get_inode(inode->i_sb, inode->i_ino);
 	if (!ni)
 		return -EACCES;
 
+//	printk("ni->i_size:%ld, inode->i_size =%lx\n", ni->i_blocks, inode->i_blocks); 
 //	mutex_lock(&NVMM_I(inode)->i_meta_mutex);
 //	spin_lock(&update_inode_lock);
 
@@ -362,6 +374,7 @@ int nvmm_update_inode(struct inode *inode)
 
 
 	nvmm_memunlock_inode(inode->i_sb, ni);
+
 	ni->i_mode = cpu_to_le32(inode->i_mode);
 	ni->i_uid = cpu_to_le32(inode->i_uid);
 	ni->i_gid = cpu_to_le32(inode->i_gid);
@@ -541,11 +554,11 @@ void nvmm_evict_inode(struct inode * inode)
 	invalidate_inode_buffers(inode);
 	clear_inode(inode);
 
+	nvmm_destroy_mapping(inode);
 	if (want_delete) {
 		nvmm_free_inode(inode);
 		sb_end_intwrite(inode->i_sb);
 	}
-	nvmm_destroy_mapping(inode);
 }
 
 
@@ -619,6 +632,8 @@ struct inode *nvmm_new_inode(struct inode *dir, umode_t mode, const struct qstr 
 //	mutex_init(&ni_info->i_meta_mutex);
 	inode->i_generation = atomic_add_return(1, &sbi->next_generation);
 
+	/*establish pagetable*/
+	errval = nvmm_init_pg_table(inode->i_sb, inode->i_ino);
 	
 	nvmm_set_inode_flags(inode);
 	if (insert_inode_locked(inode) < 0) {
@@ -642,8 +657,7 @@ struct inode *nvmm_new_inode(struct inode *dir, umode_t mode, const struct qstr 
 	spin_unlock(&NVMM_SB(sb)->inode_spinlock);
 //	spin_unlock(&superblock_lock);
 //	mutex_unlock(&NVMM_SB(sb)->s_lock);
-	/*establish pagetable*/
-	errval = nvmm_init_pg_table(inode->i_sb, inode->i_ino);
+	
 
 	return inode;
 fail2:
@@ -673,6 +687,8 @@ fail1:
  */
 int nvmm_write_inode(struct inode *inode, struct writeback_control *wbc)
 {
+
+	//printk("this is in nvmm_write_inode\n"); 
 	return nvmm_update_inode(inode);
 }
 
@@ -683,6 +699,7 @@ int nvmm_write_inode(struct inode *inode, struct writeback_control *wbc)
  */
 void nvmm_dirty_inode(struct inode *inode)
 {
+	//printk("this is in nvmm_dirty_inode\n"); 
 	nvmm_update_inode(inode);
 }
 /*
@@ -823,8 +840,6 @@ static int nvmm_setsize(struct inode *inode, loff_t newsize)
 
 	/*check for the flag EOFBOCLKS is still valid after the set size*/
 	check_eof_blocks(inode, newsize);
-	inode->i_mtime = inode->i_ctime = CURRENT_TIME_SEC;
-	nvmm_update_inode(inode);
 
 	return ret;
 }
@@ -922,8 +937,14 @@ int nvmm_notify_change(struct dentry *dentry, struct iattr *attr)
 			nvmm_error(inode->i_sb, __FUNCTION__, "inode wrong\n");
 		}
 	}
-
-	error = nvmm_update_inode(inode);
+	inode->i_mtime = inode->i_ctime = CURRENT_TIME_SEC;
+	if(NVMM_I(inode)->consistency_inode == NULL){
+		NVMM_I(inode)->consistency_inode = nvmm_new_consistency_inode(inode->i_sb);
+		nvmm_info("create a consistency_inode in nvmm_notify_change,error\n");
+	}
+	nvmm_consistency_before_writing(inode);
+	nvmm_update_inode(inode);
+	nvmm_consistency_end_writing(inode);
 	if(error){
 		nvmm_error(inode->i_sb, __FUNCTION__, "update inode wrong\n");
 	}

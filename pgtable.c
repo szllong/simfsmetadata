@@ -448,6 +448,9 @@ int nvmm_establish_mapping(struct inode *inode)
 			mode = 0;
 			ni_info->i_virt_addr = nvmalloc(mode);
 		}
+		if(ni_info->consistency_inode == NULL){
+			ni_info->consistency_inode = nvmm_new_consistency_inode(sb);
+		}
 	}else{
 //		printk("this is a multiple process");
 	}
@@ -496,9 +499,13 @@ int nvmm_destroy_mapping(struct inode *inode)
 
 	if(!vaddr)
 		return 0;
-	errval = unnvmap(vaddr, pud, &init_mm);
+	if(pud)
+		errval = unnvmap(vaddr, pud, &init_mm);
 	nvfree(ni_info->i_virt_addr);
 	ni_info->i_virt_addr = 0;
+	
+	nvmm_free_consistency_inode(sb, ni_info->consistency_inode);
+	ni_info->consistency_inode = NULL;
 
 	return errval;
 }

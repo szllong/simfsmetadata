@@ -12,31 +12,125 @@
 
 #define NVMM_PAGE_MASK 0xfff
 
+struct nvmm_inode * nvmm_new_consistency_inode(struct super_block *sb)
+{
+	struct nvmm_super_block *nsb = nvmm_get_super(sb);
+	struct nvmm_inode *ni = NULL;
+	unsigned long offset, ino_phy;
+	int errval = 0;
+	ino_t ino = 0;
 
+	if(nsb->s_free_consistency_count){
+		offset = le64_to_cpu(nsb->s_free_consistency_inode_hint);
+		ino_phy = nvmm_offset_to_phys(sb, offset);
+		ino = nvmm_get_inodenr(sb, ino_phy);
+		//nvmm_info("The inode %lx\n" , ino);
+		ni = nvmm_get_inode(sb, ino);
+		nvmm_info("allocating inode %lx as a consistency inode\n", (unsigned long)le64_to_cpu(ni->consistency_inode_ino));
+		nsb->s_free_consistency_inode_hint = ni->i_next_inode_offset;
+		ni->i_next_inode_offset = 0;
+		le64_add_cpu(&nsb->s_free_consistency_count, -1);
+	}else{
+		errval = -ENOSPC;
+		return ERR_PTR(errval);
+	}
+
+	return ni;
+	
+}
+
+void nvmm_free_consistency_inode(struct super_block *sb, struct nvmm_inode *ni)
+{
+	struct nvmm_super_block *nsb;
+	unsigned long offset, inode_phy;
+
+	nsb = nvmm_get_super(sb);
+	inode_phy = nvmm_get_inode_phy_addr(sb, ni->consistency_inode_ino);
+	nvmm_info("reclaiming consistency inode %lx\n", (unsigned long)le64_to_cpu(ni->consistency_inode_ino));
+	offset = nvmm_phys_to_offset(sb, inode_phy);
+	ni->i_next_inode_offset = nsb->s_free_consistency_inode_hint;
+	nsb->s_free_consistency_inode_hint = offset;
+	le64_add_cpu(&nsb->s_free_consistency_count, 1);
+}
+
+int nvmm_new_consistency_block(struct nvmm_super_block *ns, void *sbi_virt_addr, phys_addr_t *physaddr)
+{
+	unsigned long blocksize;
+	char *nb;
+	unsigned long *temp;
+	int errval = 0, i = 0;
+	phys_addr_t offset, next;
+
+	blocksize = le32_to_cpu(ns->s_blocksize);
+
+	offset = le64_to_cpu(ns->s_free_block_start);
+	next = offset;
+	for(i = 0; i < 512; ++i){
+		nb = (char *) sbi_virt_addr + next;
+		temp = (unsigned long *)nb;
+		next = *temp;
+		le64_add_cpu(&ns->s_free_block_count, -1);
+	}
+	ns->s_free_block_start = cpu_to_le64(next);
+	*physaddr = offset + (phys_addr_t)sbi_virt_addr;
+	return errval;
+}
+
+void nvmm_init_consistency_inode(struct nvmm_super_block *ns, void *sbi_virt_addr)
+{
+	void *start_addr = le64_to_cpu(ns->s_free_inode_start) + sbi_virt_addr;
+	unsigned long consistency_num_inodes = le64_to_cpu(ns->s_consistency_count);
+	unsigned long next_offset = le64_to_cpu(ns->s_free_inode_start) + NVMM_INODE_SIZE;
+	struct nvmm_inode *temp = NULL;
+	unsigned long inode_ino = NVMM_ROOT_INO + 1;
+	ns->s_free_consistency_inode_hint = ns->s_free_inode_start;
+	while(consistency_num_inodes > 0){
+		phys_addr_t phys;
+		temp = (struct nvmm_inode *)start_addr;
+		temp->i_next_inode_offset = cpu_to_le64(next_offset);
+		temp->consistency_inode_ino = cpu_to_le64(inode_ino);
+		temp->transaction_flag = cpu_to_le64(TRANSACTION_CHECKPOINTING);
+		temp->origin_inode_ino = cpu_to_le64(0);
+		temp->write_length = cpu_to_le64(0);
+		temp->start_write_position = cpu_to_le64(0);
+		nvmm_new_consistency_block(ns, sbi_virt_addr, &phys);
+		temp->i_pg_addr = phys;
+		//nvmm_info("The address:%lx\n", (unsigned long)sbi_virt_addr);
+		//nvmm_info("The inode %lx address:%lx\n", inode_ino, (unsigned long)temp->i_pg_addr);
+		start_addr += NVMM_INODE_SIZE;
+		next_offset += NVMM_INODE_SIZE;
+		consistency_num_inodes--;
+		inode_ino++;
+	}
+	ns->s_free_inode_start = cpu_to_le64(next_offset);
+	ns->s_free_inode_count -= ns->s_consistency_count;
+}
+
+
+ 
 void nvmm_init_free_inode_list_offset(struct nvmm_super_block *ps,void *sbi_virt_addr)
 {
-    void *start_addr = le64_to_cpu(ps->s_free_inode_start) + sbi_virt_addr;
- //   void *mytest_addr = start_addr;
-    unsigned int inode_count = le64_to_cpu(ps->s_free_inode_count);
-    struct nvmm_inode *temp = NULL;
-//    int i = 0;
-    unsigned long next_offset = le64_to_cpu(ps->s_free_inode_start) + NVMM_INODE_SIZE;
-    while(inode_count > 0) {
-        //nvmm_info("The inode %u address:%lx,offset:%lu\n",
-          //        inode_count,(unsigned long)start_addr,next_offset);
-        temp = (struct nvmm_inode *)start_addr;
-        temp->i_pg_addr = cpu_to_le64(next_offset);
-//	nvmm_info("the inode temp offset is :%llu\n",le64_to_cpu(temp->i_pg_addr));
+	void *start_addr = le64_to_cpu(ps->s_free_inode_start) + sbi_virt_addr;
+	//void *mytest_addr = start_addr;
+	unsigned int inode_count = le64_to_cpu(ps->s_free_inode_count);
+	struct nvmm_inode *temp = NULL;
+	unsigned long next_offset = le64_to_cpu(ps->s_free_inode_start) + NVMM_INODE_SIZE;
+	while(inode_count > 0) {
+		//nvmm_info("The inode %u address:%lx,offset:%lu\n", inode_count, (unsigned long)start_addr, next_offset);
+		temp = (struct nvmm_inode *)start_addr;
+		temp->i_pg_addr = cpu_to_le64(next_offset);
+		//nvmm_info("the inode temp offset is :%llu\n",le64_to_cpu(temp->i_pg_addr));
         start_addr += NVMM_INODE_SIZE;
         next_offset += NVMM_INODE_SIZE;
         inode_count--;
     }
-  //  for(i = 0;i < ps->s_free_inode_count; i++){
-//	    temp = (struct nvmm_inode *)mytest_addr;
-//	    nvmm_info("the inode temp offset is :%llu\n",le64_to_cpu(temp->i_pg_addr));
-//	    mytest_addr += NVMM_INODE_SIZE;
-
-  //  }
+	//init free consistency inodes list
+	nvmm_init_consistency_inode(ps, sbi_virt_addr);
+	//for(i = 0;i < ps->s_free_inode_count; i++){
+	//temp = (struct nvmm_inode *)mytest_addr;
+	//nvmm_info("the inode temp offset is :%llu\n",le64_to_cpu(temp->i_pg_addr));
+	//mytest_addr += NVMM_INODE_SIZE;
+	//}
 }
 
 void nvmm_init_free_block_list_offset(struct nvmm_super_block *ps,void *sbi_virt_addr)
@@ -68,6 +162,8 @@ void nvmm_init_free_block_list_offset(struct nvmm_super_block *ps,void *sbi_virt
 //    }
 }
 
+
+
 int nvmm_new_block(struct super_block *sb, phys_addr_t *physaddr,
                    int zero, int num)
 {
@@ -98,12 +194,11 @@ int nvmm_new_block(struct super_block *sb, phys_addr_t *physaddr,
 	next = *temp;
 	le64_add_cpu(&nsb->s_free_block_count, -1);
 	*/
-    for (i = 0; i < num; ++i)
-    {
+    for (i = 0; i < num; ++i){
         nb = (char *)nsi->virt_addr + next;
         temp = (unsigned long *)nb;
         next = *temp;
-	le64_add_cpu(&nsb->s_free_block_count, -1);
+		le64_add_cpu(&nsb->s_free_block_count, -1);
     }
 	nsb->s_free_block_start = cpu_to_le64(next);
 

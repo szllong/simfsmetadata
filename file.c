@@ -135,12 +135,11 @@ static size_t nvmm_iov_copy_to(void *from, struct iov_iter *i, size_t bytes)
 static int nvmm_open_file(struct inode *inode, struct file *filp)
 {
 	int errval = 0;
-	struct inode *consistency_i;
+//	struct inode *consistency_i;
 	struct super_block *sb;
 	sb = inode->i_sb;
-	consistency_i = NVMM_SB(sb)->consistency_i;
+	//consistency_i = NVMM_SB(sb)->consistency_i;
 	errval = nvmm_establish_mapping(inode);
-	errval = nvmm_establish_mapping(consistency_i);
 	if(errval){
 		nvmm_error(inode->i_sb, __FUNCTION__, "can't establish mapping\n");
 		return errval;
@@ -161,18 +160,16 @@ static int nvmm_release_file(struct file * file)
 	struct nvmm_inode_info *ni_info;
 	unsigned long vaddr;
 	struct super_block *sb;
-	struct inode *consistency_i;
+//	struct inode *consistency_i;
 	int err = 0;
 	sb = inode->i_sb;
-	consistency_i = NVMM_SB(sb)->consistency_i;
+	//consistency_i = NVMM_SB(sb)->consistency_i;
 	ni_info = NVMM_I(inode);
 	vaddr = (unsigned long)ni_info->i_virt_addr;
 	if(vaddr){
 		if(atomic_dec_and_test(&ni_info->i_p_counter)){
 			err = nvmm_destroy_mapping(inode);
-			err = nvmm_destroy_mapping(consistency_i);
 		}
-
 //		printk("release, ino = %ld, process num = %d, vaddr = %lx\n", inode->i_ino, (ni_info->i_p_counter).counter, vaddr);
 
 	}else{
@@ -183,23 +180,6 @@ static int nvmm_release_file(struct file * file)
 }
 
 
-static int nvmm_consistency_function(struct super_block *sb, struct inode *normal_i, loff_t offset, size_t length, struct iov_iter *iter)
-{
-	struct inode *consistency_i;
-	struct nvmm_inode_info *normal_i_info, *consistency_i_info;
-	void *normal_vaddr, *consistency_vaddr;
-	int ret = 0;
-
-	consistency_i = NVMM_SB(sb)->consistency_i;
-	consistency_i_info = NVMM_I(consistency_i);
-	normal_i_info = NVMM_I(normal_i);
-	normal_vaddr = normal_i_info->i_virt_addr + offset;
-	consistency_vaddr = consistency_i_info->i_virt_addr;
-	ret = nvmm_iov_copy_from(consistency_vaddr, iter, length);
-	memcpy(normal_vaddr, consistency_vaddr, length);
-
-	return ret;
-}
 
 ssize_t nvmm_direct_IO(int rw, struct kiocb *iocb,
 		   const struct iovec *iov,
@@ -208,6 +188,7 @@ ssize_t nvmm_direct_IO(int rw, struct kiocb *iocb,
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
 	struct super_block *sb = inode->i_sb;
+	struct nvmm_inode *ni = nvmm_get_inode(sb, inode->i_ino);
 	ssize_t retval = 0;
 	int hole = 0;
 	struct iov_iter iter;
@@ -216,6 +197,7 @@ ssize_t nvmm_direct_IO(int rw, struct kiocb *iocb,
 	size_t length = iov_length(iov, nr_segs);
 	unsigned long pages_exist = 0, pages_to_alloc = 0,pages_needed = 0;        
   // printk("size_t length is : %ld\n", length); 
+  // printk("this is in nvmm_direct_IO\n"); 
 	if(rw == READ)
 		rcu_read_lock();
 	size = i_size_read(inode);
@@ -232,6 +214,9 @@ ssize_t nvmm_direct_IO(int rw, struct kiocb *iocb,
 		goto out;
     
 	iov_iter_init(&iter, iov, nr_segs, length, 0);
+
+
+
 	if(rw == READ){
 		if(unlikely(hole)){
 			
@@ -243,11 +228,17 @@ ssize_t nvmm_direct_IO(int rw, struct kiocb *iocb,
 			}
 		}		
 	}else if(rw == WRITE) {
-        pages_needed = ((offset + length + sb->s_blocksize - 1) >> sb->s_blocksize_bits);
+		pages_needed = ((offset + length + sb->s_blocksize - 1) >> sb->s_blocksize_bits);
         pages_exist = (size + sb->s_blocksize - 1) >> sb->s_blocksize_bits;
         pages_to_alloc = pages_needed - pages_exist;
 
+		nvmm_consistency_before_writing(inode);
+
+		inode->i_ctime = inode->i_mtime = CURRENT_TIME_SEC;
+		nvmm_update_time(inode, ni);
+		nvmm_consistency_backup_data(sb, inode, offset, length);
 		if(pages_to_alloc > 0){
+
 //			printk("pages_to_alloc = %ld\n", pages_to_alloc);
 			retval = nvmm_alloc_blocks(inode, pages_to_alloc);
 	
@@ -262,11 +253,10 @@ ssize_t nvmm_direct_IO(int rw, struct kiocb *iocb,
 			retval = nvmm_iov_copy_from(start_vaddr, &iter, length);
 //			printk("this is normal way\n");
 		}else{
-			retval = nvmm_consistency_function(sb, inode, offset, length, &iter);
 //			printk("this is consistency way\n");
+			retval = nvmm_iov_copy_from(start_vaddr, &iter, length);
 		}
-		
-
+		nvmm_consistency_end_writing(inode);
 		if(retval != length){
 			retval = -EFAULT;
 			goto out;
