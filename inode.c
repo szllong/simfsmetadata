@@ -589,7 +589,7 @@ struct inode *nvmm_new_inode(struct inode *dir, umode_t mode, const struct qstr 
 //	mutex_lock(&NVMM_SB(sb)->s_lock);
 
 
-	nvmm_info("this is in file %s, in function %s\n", __FILE__, __FUNCTION__);
+//	nvmm_info("this is in file %s, in function %s\n", __FILE__, __FUNCTION__);
 	spin_lock(&NVMM_SB(sb)->inode_spinlock);
 	ns = nvmm_get_super(sb);
 

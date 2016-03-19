@@ -26,7 +26,7 @@ struct nvmm_inode * nvmm_new_consistency_inode(struct super_block *sb)
 		ino = nvmm_get_inodenr(sb, ino_phy);
 		//nvmm_info("The inode %lx\n" , ino);
 		ni = nvmm_get_inode(sb, ino);
-		nvmm_info("allocating inode %lx as a consistency inode\n", (unsigned long)le64_to_cpu(ni->consistency_inode_ino));
+//		nvmm_info("allocating inode %lx as a consistency inode\n", (unsigned long)le64_to_cpu(ni->consistency_inode_ino));
 		nsb->s_free_consistency_inode_hint = ni->i_next_inode_offset;
 		ni->i_next_inode_offset = 0;
 		le64_add_cpu(&nsb->s_free_consistency_count, -1);
@@ -46,7 +46,7 @@ void nvmm_free_consistency_inode(struct super_block *sb, struct nvmm_inode *ni)
 
 	nsb = nvmm_get_super(sb);
 	inode_phy = nvmm_get_inode_phy_addr(sb, ni->consistency_inode_ino);
-	nvmm_info("reclaiming consistency inode %lx\n", (unsigned long)le64_to_cpu(ni->consistency_inode_ino));
+//	nvmm_info("reclaiming consistency inode %lx\n", (unsigned long)le64_to_cpu(ni->consistency_inode_ino));
 	offset = nvmm_phys_to_offset(sb, inode_phy);
 	ni->i_next_inode_offset = nsb->s_free_consistency_inode_hint;
 	nsb->s_free_consistency_inode_hint = offset;

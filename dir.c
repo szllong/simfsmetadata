@@ -92,7 +92,7 @@ nvmm_readdir(struct file *file, struct dir_context *ctx)
 	
 	/*establish mapping*/
 	err = nvmm_establish_mapping(inode);
-	nvmm_info("this is in file %s, in function %s\n", __FILE__, __FUNCTION__);
+//	nvmm_info("this is in file %s, in function %s\n", __FILE__, __FUNCTION__);
 
 	if(pos >= inode->i_size)
 		goto final;
@@ -255,7 +255,7 @@ ino_t nvmm_inode_by_name(struct inode *dir,struct qstr *child)
     struct nvmm_dir_entry *nouse = NULL;
 
 	nvmm_establish_mapping(dir);
-	nvmm_info("this is in file %s, in function %s\n", __FILE__, __FUNCTION__);
+//	nvmm_info("this is in file %s, in function %s\n", __FILE__, __FUNCTION__);
     de = nvmm_find_entry2(dir,child,&nouse);
     if(de)
         res = le32_to_cpu(de->inode);
