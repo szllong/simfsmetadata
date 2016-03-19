@@ -235,10 +235,13 @@ static int nvmm_unlink(struct inode *dir, struct dentry *dentry)
     dquot_initialize(dir);
     
     nvmm_establish_mapping(dir);
+	nvmm_info("this is in file %s, in function %s\n", __FILE__, __FUNCTION__);
+	nvmm_consistency_before_writing(dir);
     de = nvmm_find_entry2(dir,&dentry->d_name,&pde);
     if(unlikely(!de))
         goto out;
 
+	nvmm_consistency_backup_data(dir->i_sb, dir, 0, dir->i_size);
     err = nvmm_delete_entry(de,&pde,dir);
     if(unlikely(err))
         goto out;
@@ -247,6 +250,7 @@ static int nvmm_unlink(struct inode *dir, struct dentry *dentry)
     inode_dec_link_count(inode);
     err = 0;
  out:
+	nvmm_consistency_end_writing(dir);
     nvmm_destroy_mapping(dir);
 	return err;
 }

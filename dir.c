@@ -92,7 +92,7 @@ nvmm_readdir(struct file *file, struct dir_context *ctx)
 	
 	/*establish mapping*/
 	err = nvmm_establish_mapping(inode);
-
+	nvmm_info("this is in file %s, in function %s\n", __FILE__, __FUNCTION__);
 
 	if(pos >= inode->i_size)
 		goto final;
@@ -255,6 +255,7 @@ ino_t nvmm_inode_by_name(struct inode *dir,struct qstr *child)
     struct nvmm_dir_entry *nouse = NULL;
 
 	nvmm_establish_mapping(dir);
+	nvmm_info("this is in file %s, in function %s\n", __FILE__, __FUNCTION__);
     de = nvmm_find_entry2(dir,child,&nouse);
     if(de)
         res = le32_to_cpu(de->inode);
@@ -378,24 +379,27 @@ need_new_block:
 got_it:
 	
 
+
+	nvmm_consistency_before_writing(dir);
+	dir->i_mtime = dir->i_ctime = CURRENT_TIME_SEC;
+	nvmm_update_time(dir, nvmm_get_inode(dir->i_sb, dir->i_ino));
+	nvmm_consistency_backup_data(dir->i_sb, dir, 0, size);
 	if(de->inode){
-	struct nvmm_dir_entry *de1 = (struct nvmm_dir_entry *)((char *)de + name_len);
-	int temp_rec_len = rec_len - name_len;
+		struct nvmm_dir_entry *de1 = (struct nvmm_dir_entry *)((char *)de + name_len);
+		int temp_rec_len = rec_len - name_len;
         de1->rec_len = cpu_to_le16(temp_rec_len);
-	
         de->rec_len = cpu_to_le16(name_len);
-	
         de = de1;
-    	}
-    	de->name_len = namelen;
-    	memcpy(de->name,name,namelen);
-    	de->inode = cpu_to_le64(inode->i_ino);
-    	nvmm_set_de_type(de,inode);
-    	dir->i_mtime = dir->i_ctime = CURRENT_TIME_SEC;
-    	NVMM_I(dir)->i_flags &= ~NVMM_BTREE_FL;
-        unlock_page(page);
-    	mark_inode_dirty(dir);
-    	err = 0;
+	}
+	de->name_len = namelen;
+	memcpy(de->name,name,namelen);
+	de->inode = cpu_to_le64(inode->i_ino);
+	nvmm_set_de_type(de,inode);
+	NVMM_I(dir)->i_flags &= ~NVMM_BTREE_FL;
+	unlock_page(page);
+	nvmm_consistency_end_writing(dir);
+	mark_inode_dirty(dir);
+	err = 0;
 out:
 	return err;
 }

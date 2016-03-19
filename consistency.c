@@ -23,8 +23,8 @@ void nvmm_consistency_before_writing(struct inode *normal_i)
 		consistency_inode->i_atime = normal_inode->i_atime;
 		consistency_inode->i_ctime = normal_inode->i_ctime;
 		consistency_inode->i_mtime = normal_inode->i_mtime;
-		consistency_inode->transaction_flag = TRANSACTION_APPENDING;
-		nvmm_info("consistency_inode %lx, back up metada and set flag to TRANSACTION_APPENDING\n", consistency_inode->consistency_inode_ino);
+		consistency_inode->transaction_flag = TRANSACTION_PENDING;
+		nvmm_info("consistency_inode %lx, back up metada and set flag to TRANSACTION_PENDING\n", consistency_inode->consistency_inode_ino);
 	}
 }
 

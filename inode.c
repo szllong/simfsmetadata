@@ -534,6 +534,8 @@ void nvmm_evict_inode(struct inode * inode)
 	int want_delete = 0;
 
 	nvmm_establish_mapping(inode);
+
+	nvmm_info("this is in file %s, in function %s\n", __FILE__, __FUNCTION__);
 	if (!inode->i_nlink && !is_bad_inode(inode)){
 		want_delete = 1;
 		dquot_initialize(inode);
@@ -587,6 +589,7 @@ struct inode *nvmm_new_inode(struct inode *dir, umode_t mode, const struct qstr 
 //	mutex_lock(&NVMM_SB(sb)->s_lock);
 
 
+	nvmm_info("this is in file %s, in function %s\n", __FILE__, __FUNCTION__);
 	spin_lock(&NVMM_SB(sb)->inode_spinlock);
 	ns = nvmm_get_super(sb);
 

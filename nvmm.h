@@ -35,7 +35,7 @@
 #define set_opt(o, opt)		(o |= NVMM_MOUNT_##opt)
 #define test_opt(sb, opt)	(NVMM_SB(sb)->s_mount_opt & NVMM_MOUNT_##opt)
 
-#define TRANSACTION_APPENDING  1
+#define TRANSACTION_PENDING  1
 #define TRANSACTION_COMMIT 2
 #define TRANSACTION_CHECKPOINTING 3
 
